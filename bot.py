@@ -1,8 +1,11 @@
 import asyncio
 import json
+import os
 import statistics
-import websockets
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import websockets
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -11,6 +14,27 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 # TOKEN
 # ==========================================
 BOT_TOKEN = "8701511595:AAFhcipS4PB4pa8ygEqwFcCJiTwHFJ9-mMU"
+
+# ==========================================
+# PORT FOR RENDER
+# ==========================================
+PORT = int(os.environ.get("PORT", 10000))
+
+# ==========================================
+# SIMPLE WEB SERVER
+# ==========================================
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"BOT IS WORKING")
+
+def run_web():
+    server = HTTPServer(("0.0.0.0", PORT), Handler)
+    server.serve_forever()
+
+threading.Thread(target=run_web, daemon=True).start()
 
 # ==========================================
 # TELEGRAM
@@ -37,15 +61,16 @@ menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="📊 AI Анализ")],
         [KeyboardButton(text="🎯 Лучшие кейсы")],
         [KeyboardButton(text="⚡ AI Апгрейд")],
-        [KeyboardButton(text="🧠 AI Риск")],
+        [KeyboardButton(text="🧠 AI Риск")]
     ],
     resize_keyboard=True
 )
 
 # ==========================================
-# AI FUNCTIONS
+# AI
 # ==========================================
 def detect_site_state():
+
     global site_state
 
     if len(last_drops) < 20:
@@ -55,6 +80,7 @@ def detect_site_state():
     cheap = 0
 
     for drop in last_drops[-20:]:
+
         price = drop.get("price", 0)
 
         if price >= 100:
@@ -70,6 +96,7 @@ def detect_site_state():
     return site_state
 
 def ai_score():
+
     if len(last_drops) < 10:
         return 50
 
@@ -89,6 +116,7 @@ def ai_score():
     return 35
 
 def get_best_cases(balance):
+
     balance = float(balance)
 
     if balance < 5:
@@ -119,12 +147,13 @@ def get_best_cases(balance):
     ]
 
 def ai_upgrade(balance):
+
     balance = float(balance)
 
     state = detect_site_state()
 
     if state == "СЕЙЧАС СЛИВАЕТ":
-        return "AI советует НЕ делать апгрейд сейчас"
+        return "AI советует НЕ делать апгрейд"
 
     if balance < 10:
         return "AI советует 20% upgrade"
@@ -138,20 +167,27 @@ def ai_upgrade(balance):
 # WEBSOCKET
 # ==========================================
 async def websocket_listener():
+
     global last_drops
 
     while True:
+
         try:
+
             async with websockets.connect(WS_URL) as ws:
+
                 print("CONNECTED TO WS")
 
                 while True:
+
                     msg = await ws.recv()
 
                     try:
+
                         data = json.loads(msg)
 
                         if isinstance(data, dict):
+
                             last_drops.append(data)
 
                             if len(last_drops) > 200:
@@ -161,7 +197,9 @@ async def websocket_listener():
                         pass
 
         except Exception as e:
+
             print("WS ERROR:", e)
+
             await asyncio.sleep(5)
 
 # ==========================================
@@ -169,6 +207,7 @@ async def websocket_listener():
 # ==========================================
 @dp.message(Command("start"))
 async def start(message: types.Message):
+
     text = (
         "🧠 AI CASE BOT PRO V2\n\n"
         "Функции:\n"
@@ -176,8 +215,6 @@ async def start(message: types.Message):
         "• AI риск движок\n"
         "• Лучшие кейсы\n"
         "• AI апгрейды\n"
-        "• Анализ выдачи\n"
-        "• Анализ сливов\n"
     )
 
     await message.answer(text, reply_markup=menu)
@@ -186,7 +223,7 @@ async def start(message: types.Message):
 # ANALYSIS
 # ==========================================
 @dp.message(lambda message: message.text == "📊 AI Анализ")
-async def ai_analysis(message: types.Message):
+async def analysis(message: types.Message):
 
     state = detect_site_state()
     score = ai_score()
@@ -195,7 +232,7 @@ async def ai_analysis(message: types.Message):
         f"📊 AI Анализ\n\n"
         f"Состояние сайта: {state}\n"
         f"AI SCORE: {score}/100\n"
-        f"Drops в памяти: {len(last_drops)}"
+        f"Дропов: {len(last_drops)}"
     )
 
     await message.answer(text)
@@ -205,13 +242,14 @@ async def ai_analysis(message: types.Message):
 # ==========================================
 @dp.message(lambda message: message.text == "🎯 Лучшие кейсы")
 async def best_cases(message: types.Message):
-    await message.answer("💰 Напиши свой баланс")
+
+    await message.answer("Напиши баланс")
 
 # ==========================================
-# BALANCE HANDLER
+# BALANCE
 # ==========================================
 @dp.message(lambda message: message.text.replace('.', '').isdigit())
-async def budget_handler(message: types.Message):
+async def budget(message: types.Message):
 
     balance = float(message.text)
 
@@ -219,18 +257,14 @@ async def budget_handler(message: types.Message):
 
     upgrade = ai_upgrade(balance)
 
-    text = (
-        f"💰 Баланс: ${balance}\n\n"
-        f"🎯 Лучшие кейсы:\n"
-    )
+    text = f"💰 Баланс: ${balance}\n\n"
+
+    text += "🎯 Лучшие кейсы:\n"
 
     for case in cases:
         text += f"• {case}\n"
 
-    text += (
-        f"\n⚡ AI Upgrade:\n"
-        f"{upgrade}\n"
-    )
+    text += f"\n⚡ {upgrade}"
 
     await message.answer(text)
 
@@ -238,20 +272,14 @@ async def budget_handler(message: types.Message):
 # RISK
 # ==========================================
 @dp.message(lambda message: message.text == "🧠 AI Риск")
-async def risk_command(message: types.Message):
+async def risk(message: types.Message):
 
     state = detect_site_state()
 
     if state == "СЕЙЧАС СЛИВАЕТ":
-        text = (
-            "🚨 AI считает что сайт сейчас сливает\n"
-            "Лучше не рисковать"
-        )
+        text = "🚨 AI считает что сайт сейчас сливает"
     else:
-        text = (
-            "✅ AI считает что сайт сейчас выдает\n"
-            "Можно делать осторожные апгрейды"
-        )
+        text = "✅ AI считает что сайт сейчас выдает"
 
     await message.answer(text)
 
@@ -259,14 +287,11 @@ async def risk_command(message: types.Message):
 # UPGRADE
 # ==========================================
 @dp.message(lambda message: message.text == "⚡ AI Апгрейд")
-async def upgrade_command(message: types.Message):
+async def upgrade(message: types.Message):
 
-    text = (
-        "⚡ Напиши баланс\n"
-        "AI рассчитает upgrade стратегию"
+    await message.answer(
+        "Напиши баланс и AI рассчитает upgrade"
     )
-
-    await message.answer(text)
 
 # ==========================================
 # MAIN
